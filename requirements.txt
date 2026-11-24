@@ -1,0 +1,26 @@
+# Python: 3.10.14
+#
+# PyTorch 和 CUDA 请根据实际硬件环境单独配置。
+# 本项目实际实验环境：
+# GPU: NVIDIA GeForce RTX 5070 Laptop GPU
+# Driver: 595.99.02
+# PyTorch: 2.11.0+cu130
+# PyTorch CUDA: 13.0
+#
+# PyTorch 官方安装指南：https://pytorch.org/get-started/locally/
+accelerate==1.15.0
+chardet==7.7.0
+datasets==5.2.0
+gensim==4.4.0
+huggingface_hub==2.4.0
+jieba==0.42.1
+matplotlib==3.10.9
+numpy==2.2.6
+pyarrow==25.0.1
+safetensors==0.8.0
+scikit-learn==1.7.2
+scipy==1.15.3
+seqeval==1.2.2
+tokenizers==0.23.3
+tqdm==4.70.1
+transformers==5.20.2
