@@ -1,0 +1,10 @@
+语料：/home/zxx/knowledge/实验1-文本表示学习/实验代码/data/seg_text.txt
+开始训练：CBOW, sg=0, window=1, vector_size=64, epochs=3, seed=42, workers=1
+训练完成，耗时 0.68 秒，词表大小 9585
+sim(岳不群, 林平之) = 0.98663151
+sim(岳不群, 岳灵珊) = 0.98458081
+sim(岳不群, 葵花宝典) = 0.33209047
+sim(岳不群, 易筋经) = 0.53126776
+两对相似度均 > 0.95：True
+模型：/home/zxx/knowledge/实验1-文本表示学习/实验代码/ckpt/seg_text_sg0.model
+训练记录：/home/zxx/knowledge/实验1-文本表示学习/实验代码/result/seg_text_sg0_train.txt
