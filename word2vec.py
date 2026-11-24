@@ -9,7 +9,7 @@ from gensim.models import word2vec
 # 更大的窗口或更多训练轮数，不一定让指定词对的相似度更高。
 window = 1        # 上下文窗口：只考虑紧邻的词
 vector_size = 64  # 词向量维度
-sg = 0            # 1 为 Skip-gram，0 为 CBOW
+sg = 0          # 1 为 Skip-gram，0 为 CBOW
 epochs = 3        # 训练轮数
 seed = 42         # 随机种子
 workers = 1       # 单线程，避免多线程更新顺序带来的随机波动
