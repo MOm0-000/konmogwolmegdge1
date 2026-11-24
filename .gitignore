@@ -1,0 +1,43 @@
+# Hugging Face 模型及数据集缓存
+/cache/
+
+# 模型训练检查点
+/ckpt/
+*.model
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# 数据集缓存文件
+*.arrow
+*.parquet
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Python 虚拟环境
+.venv/
+venv/
+.env
+
+# IDE 配置
+.idea/
+.vscode/
+
+# Jupyter Notebook 缓存
+.ipynb_checkpoints/
+
+# 训练日志及输出
+logs/
+runs/
+outputs/
+wandb/
+*.log
+
+# 系统临时文件
+.DS_Store
+Thumbs.db
