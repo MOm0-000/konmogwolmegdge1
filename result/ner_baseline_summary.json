@@ -1,0 +1,72 @@
+{
+  "config": {
+    "epochs": 1,
+    "batch_size": 8,
+    "lr": 2e-05,
+    "seed": 42,
+    "max_length": 512,
+    "fp16": false,
+    "run_name": "ner_baseline",
+    "model_path": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/distilbert",
+    "dataset_path": null,
+    "offline": false,
+    "eval_batch_size": 8,
+    "weight_decay": 0.01,
+    "optimizer": "adamw_torch",
+    "selection_split": "validation",
+    "final_eval_split": "test"
+  },
+  "dataset": "CoNLL2003",
+  "dataset_source": {
+    "format": "arrow",
+    "files": {
+      "train": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/conll2003/conll2003/1.0.0/9a4d16a94f8674ba3466315300359b0acd891b68b6c8743ddf60b9c702adce98/conll2003-train.arrow",
+      "validation": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/conll2003/conll2003/1.0.0/9a4d16a94f8674ba3466315300359b0acd891b68b6c8743ddf60b9c702adce98/conll2003-validation.arrow",
+      "test": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/conll2003/conll2003/1.0.0/9a4d16a94f8674ba3466315300359b0acd891b68b6c8743ddf60b9c702adce98/conll2003-test.arrow"
+    }
+  },
+  "best_checkpoint": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/ckpt/ner_baseline_ckpt/checkpoint-1756",
+  "train": {
+    "train_runtime": 68.4831,
+    "train_samples_per_second": 205.029,
+    "train_steps_per_second": 25.641,
+    "total_flos": 148696942177224.0,
+    "train_loss": 0.12145045745888712,
+    "epoch": 1.0
+  },
+  "validation": {
+    "eval_loss": 0.05837978050112724,
+    "eval_precision": 0.9070422535211268,
+    "eval_recall": 0.9212386401884888,
+    "eval_f1": 0.9140853302162479,
+    "eval_accuracy": 0.9834508002024843,
+    "eval_runtime": 2.9649,
+    "eval_samples_per_second": 1096.151,
+    "eval_steps_per_second": 137.272,
+    "epoch": 1.0
+  },
+  "test": {
+    "test_loss": 0.10520240664482117,
+    "test_precision": 0.8818938605619147,
+    "test_recall": 0.9003186968838527,
+    "test_f1": 0.8910110390748204,
+    "test_accuracy": 0.9779045978249166,
+    "test_runtime": 2.8319,
+    "test_samples_per_second": 1219.303,
+    "test_steps_per_second": 152.545,
+    "epoch": 1.0
+  },
+  "targets": {
+    "precision": 0.87,
+    "recall": 0.89,
+    "f1": 0.88,
+    "accuracy": 0.975
+  },
+  "passed": {
+    "precision": true,
+    "recall": true,
+    "f1": true,
+    "accuracy": true
+  },
+  "all_passed": true
+}

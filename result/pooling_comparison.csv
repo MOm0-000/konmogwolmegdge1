@@ -1,0 +1,4 @@
+pooling,accuracy,eval_loss,train_loss,train_seconds,epochs,batch_size,eval_batch_size,learning_rate,weight_decay,optimizer,seed,max_length,fp16,model_path,train_size,validation_size
+cls,0.9105504587155964,0.2863917350769043,0.17602121719555164,391.5643,2,16,32,2e-05,0.01,adamw_torch,42,128,False,/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/distilbert,67349,872
+mean,0.9025229357798165,0.30228617787361145,0.1768253522360976,394.1127,2,16,32,2e-05,0.01,adamw_torch,42,128,False,/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/distilbert,67349,872
+max,0.9059633027522935,0.29227492213249207,0.17847585043827882,394.5817,2,16,32,2e-05,0.01,adamw_torch,42,128,False,/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/distilbert,67349,872

@@ -1,217 +1,287 @@
-"""SST-2 sentiment classification: CLS / mean / max pooling comparison."""
+"""SST-2 classification: local-first data, CLS/mean/max pooling comparison."""
 import argparse
 import csv
 import gc
+import inspect
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
-from datasets import DownloadMode, load_dataset
-from transformers import (
-    AutoModel,
-    AutoTokenizer,
-    DataCollatorWithPadding,
-    Trainer,
-    TrainingArguments,
-    set_seed,
-)
-
+from datasets import Dataset, DatasetDict, DownloadConfig, load_dataset, load_from_disk
+from transformers import (AutoModel, AutoTokenizer, DataCollatorWithPadding,
+                          Trainer, TrainingArguments, set_seed)
 from BERT import DistilBertForSequenceClassification, POOLING_METHODS
 
-ID2LABEL = {0: "NEGATIVE", 1: "POSITIVE"}
-LABEL2ID = {value: key for key, value in ID2LABEL.items()}
-PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL = PROJECT_DIR / "cache" / "distilbert"
-PRETRAINED_MODEL = "distilbert-base-uncased"
+BASE = Path(__file__).resolve().parent
+CACHE = BASE / 'cache'
+MODEL = CACHE / 'distilbert'
+DATASET = 'stanfordnlp/sst2'
+PRETRAINED = 'distilbert-base-uncased'
+SPLITS = ('train', 'validation')
+ID2LABEL = {0: 'NEGATIVE', 1: 'POSITIVE'}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Train DistilBERT on SST-2 with configurable pooling."
-    )
-    parser.add_argument("--pooling", choices=[*POOLING_METHODS, "all"], default="cls")
-    parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--batch_size", "--batch-size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max_length", "--max-length", type=int, default=128)
-    parser.add_argument("--model_path", "--model-path", default=str(DEFAULT_MODEL))
-    parser.add_argument("--cache_dir", "--cache-dir", default=str(PROJECT_DIR / "cache"))
-    parser.add_argument("--output_dir", "--output-dir", default=str(PROJECT_DIR / "ckpt"))
-    parser.add_argument("--fp16", action="store_true", help="Enable CUDA mixed precision.")
-    args = parser.parse_args()
-    if args.epochs < 1 or args.batch_size < 1 or args.lr <= 0:
-        parser.error("epochs, batch_size and lr must be positive")
-    if not 2 <= args.max_length <= 512:
-        parser.error("max_length must be between 2 and 512")
-    if args.fp16 and not torch.cuda.is_available():
-        parser.error("--fp16 requires CUDA")
-    return args
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--pooling', choices=[*POOLING_METHODS, 'all'], default='cls')
+    p.add_argument('--epochs', type=int, default=2)
+    p.add_argument('--batch_size', type=int, default=16)
+    p.add_argument('--lr', type=float, default=2e-5)
+    p.add_argument('--seed', type=int, default=42)
+    p.add_argument('--max_length', type=int, default=128)
+    p.add_argument('--fp16', action='store_true')
+    p.add_argument('--model_path', type=Path, default=MODEL)
+    p.add_argument('--dataset_path', type=Path)
+    p.add_argument('--offline', action='store_true')
+    a = p.parse_args()
+    if a.epochs < 1 or a.batch_size < 1 or a.lr <= 0 or not 2 <= a.max_length <= 512:
+        p.error('Invalid training parameters.')
+    if a.fp16 and not torch.cuda.is_available():
+        p.error('--fp16 requires CUDA.')
+    a.model_path = a.model_path.expanduser().resolve()
+    if a.dataset_path:
+        a.dataset_path = a.dataset_path.expanduser().resolve()
+    return a
 
 
-def prepare_model(args):
-    """Use local weights; download the base checkpoint on the first run."""
-    path = Path(args.model_path)
-    if path.resolve() == DEFAULT_MODEL.resolve() and not (path / "config.json").exists():
-        print(f"Downloading {PRETRAINED_MODEL} to {path}", flush=True)
-        path.mkdir(parents=True, exist_ok=True)
-        tokenizer = AutoTokenizer.from_pretrained(PRETRAINED_MODEL, cache_dir=args.cache_dir)
-        encoder = AutoModel.from_pretrained(PRETRAINED_MODEL, cache_dir=args.cache_dir)
-        encoder.save_pretrained(path)
-        tokenizer.save_pretrained(path)
+def config_suffix(a):
+    parts = []
+    for key, baseline, prefix in [('epochs', 2, 'e'), ('batch_size', 16, 'bs'),
+                                  ('lr', 2e-5, 'lr'), ('seed', 42, 'seed'),
+                                  ('max_length', 128, 'len')]:
+        val = getattr(a, key)
+        if val != baseline:
+            parts.append(f'{prefix}{val:g}')
+    if a.fp16:
+        parts.append('fp16')
+    return '_'.join(parts) or 'baseline'
+
+
+def prepare_model(a):
+    # Load actual local files, not merely config.json. No remote requests here.
+    path = a.model_path
+    try:
+        if not path.is_dir():
+            raise FileNotFoundError(path)
+        tokenizer = AutoTokenizer.from_pretrained(str(path), local_files_only=True)
+        encoder = AutoModel.from_pretrained(str(path), local_files_only=True)
         del encoder
-    return AutoTokenizer.from_pretrained(args.model_path, cache_dir=args.cache_dir)
+        print(f'使用本地模型：{path}', flush=True)
+        return tokenizer
+    except OSError as exc:
+        if path != MODEL.resolve():
+            raise RuntimeError(f'指定模型目录无法加载：{path}') from exc
+    for local_only in ([True] if a.offline else [True, False]):
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(PRETRAINED, cache_dir=str(CACHE), local_files_only=local_only)
+            encoder = AutoModel.from_pretrained(PRETRAINED, cache_dir=str(CACHE), local_files_only=local_only)
+            break
+        except OSError:
+            if a.offline or not local_only:
+                raise
+    path.mkdir(parents=True, exist_ok=True)
+    encoder.save_pretrained(path)
+    tokenizer.save_pretrained(path)
+    del encoder
+    print(f'预训练模型已准备：{path}', flush=True)
+    return tokenizer
 
 
-def prepare_dataset(args, tokenizer):
-    dataset = load_dataset(
-        "stanfordnlp/sst2",
-        cache_dir=args.cache_dir,
-        download_mode=DownloadMode.REUSE_DATASET_IF_EXISTS,
-    )
+def validate_dataset(ds):
+    for split in SPLITS:
+        if split not in ds or not len(ds[split]) or not {'sentence', 'label'}.issubset(ds[split].column_names):
+            raise ValueError(f'Invalid SST-2 split: {split}')
+        if set(ds[split]['label']) - {0, 1}:
+            raise ValueError(f'Invalid sentiment labels: {split}')
+        label = ds[split].features['label']
+        if hasattr(label, 'names') and [s.lower() for s in label.names] != ['negative', 'positive']:
+            raise ValueError(f'Unexpected SST-2 label order: {label.names}')
+    return DatasetDict({s: ds[s] for s in SPLITS})
 
+
+def find_local_dataset(root):
+    """Accept saved DatasetDict, original HF Arrow files and Parquet shards."""
+    if not root.is_dir():
+        return None
+    folders = [root] + sorted((p for p in root.rglob('*') if p.is_dir()), key=str)
+    for folder in folders:
+        if (folder / 'dataset_dict.json').is_file():
+            ds = load_from_disk(str(folder))
+            return validate_dataset(ds), {'format': 'saved_dataset', 'path': str(folder)}
+        for ext in ('arrow', 'parquet'):
+            # HF 的 parquet builder 会生成 parquet-train.arrow 等缓存文件。
+            for prefix in ('sst2-', 'parquet-', 'glue-', ''):
+                files = {s: [folder / f'{prefix}{s}.{ext}'] for s in SPLITS}
+                if not all(p.is_file() and p.stat().st_size for ps in files.values() for p in ps):
+                    files = {s: sorted(folder.glob(f'{prefix}{s}-*-of-*.{ext}')) for s in SPLITS}
+                if not all(files.values()):
+                    continue
+                # Reject incomplete numbered shard sets.
+                complete = True
+                for ps in files.values():
+                    matches = [re.search(r'-(\d+)-of-(\d+)\.', p.name) for p in ps]
+                    if any(matches):
+                        if not all(matches) or {int(m[2]) for m in matches} != {len(ps)} or {int(m[1]) for m in matches} != set(range(len(ps))):
+                            complete = False
+                if not complete:
+                    continue
+                if ext == 'arrow':
+                    from datasets import concatenate_datasets
+                    ds = DatasetDict({s: concatenate_datasets([Dataset.from_file(str(p)) for p in ps])
+                                      if len(ps) > 1 else Dataset.from_file(str(ps[0])) for s, ps in files.items()})
+                else:
+                    ds = DatasetDict({s: Dataset.from_parquet([str(p) for p in ps]) for s, ps in files.items()})
+                return validate_dataset(ds), {'format': ext, 'files': {s: [str(p) for p in ps] for s, ps in files.items()}}
+    return None
+
+
+def load_sst2(a):
+    if a.dataset_path:
+        roots = [a.dataset_path]
+    else:
+        roots = [CACHE / 'sst2_local', CACHE / 'sst2', CACHE / 'stanfordnlp___sst2', CACHE / 'glue' / 'sst2',
+                 CACHE / 'datasets--stanfordnlp--sst2' / 'snapshots']
+        if CACHE.is_dir():
+            roots += [p for p in CACHE.rglob('*') if p.is_dir() and
+                      ('sst2' in p.name.lower() or p.name.lower() == 'sst-2')]
+    for root in dict.fromkeys(roots):
+        found = find_local_dataset(root)
+        if found:
+            print(f'使用本地 SST-2：{root}', flush=True)
+            # prepare_dataset 随后会打印实际文件路径及样本数量。
+            return found
+    if a.dataset_path:
+        raise FileNotFoundError(f'指定目录中缺少完整 SST-2 train/validation 文件：{a.dataset_path}')
+    if a.offline or os.environ.get('HF_HUB_OFFLINE', '').upper() in ('1', 'TRUE', 'YES', 'ON'):
+        raise FileNotFoundError('离线模式下未找到 SST-2，请通过 --dataset_path 指定本地目录。')
+    # First try cached HF dataset, then download if missing.
+    try:
+        ds = load_dataset(DATASET, cache_dir=str(CACHE),
+                          download_config=DownloadConfig(local_files_only=True))
+        origin = 'hf_cache'
+    except (OSError, ValueError, RuntimeError):
+        print('本地 SST-2 缓存缺失，下载数据集。', flush=True)
+        ds = load_dataset(DATASET, cache_dir=str(CACHE))
+        origin = 'download'
+    ds = validate_dataset(ds)
+    target = CACHE / 'sst2_local'
+    ds.save_to_disk(str(target))
+    print(f'SST-2 数据来源：{origin}；已保存本地数据：{target}', flush=True)
+    return ds, {'format': 'saved_dataset', 'path': str(target)}
+
+
+def prepare_dataset(a, tokenizer):
+    ds, source = load_sst2(a)
+    print(json.dumps(source, ensure_ascii=False), flush=True)
+    for s in SPLITS:
+        print(f'{s}: {len(ds[s])} sentences', flush=True)
     def preprocess(examples):
-        return tokenizer(
-            examples["sentence"], truncation=True, max_length=args.max_length
-        )
-
-    return {
-        split: dataset[split].map(
-            preprocess,
-            batched=True,
-            remove_columns=[c for c in dataset[split].column_names if c != "label"],
-        )
-        for split in ("train", "validation")
-    }
+        return tokenizer(examples['sentence'], truncation=True, max_length=a.max_length)
+    encoded = {s: ds[s].map(preprocess, batched=True,
+                          remove_columns=[c for c in ds[s].column_names if c != 'label']) for s in SPLITS}
+    return encoded, source
 
 
 def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    if isinstance(predictions, tuple):
-        predictions = predictions[0]
-    predictions = np.argmax(predictions, axis=1)
-    return {"accuracy": float(np.mean(predictions == labels))}
+    logits, labels = eval_pred
+    if isinstance(logits, tuple):
+        logits = logits[0]
+    return {'accuracy': float(np.mean(np.argmax(logits, axis=-1) == labels))}
 
 
-def train_one(args, pooling, tokenizer, tokenized_dataset):
-    print(f"\n{'=' * 60}\nPooling: {pooling}\n{'=' * 60}", flush=True)
-    # Reset the random seed BEFORE initializing the classifier for each method.
-    set_seed(args.seed)
+def train_one(a, method, tokenizer, ds, source, suffix):
+    name = f'{method}_{suffix}'
+    print(f'\n实验名称：{name}', flush=True)
+    set_seed(a.seed)
     model = DistilBertForSequenceClassification.from_pretrained(
-        args.model_path,
-        cache_dir=args.cache_dir,
-        num_labels=2,
-        id2label=ID2LABEL,
-        label2id=LABEL2ID,
-    )
-    model.config.pooling = pooling
-
-    root = Path(args.output_dir)
-    checkpoint_dir = root / f"{pooling}_ckpt"
-    model_dir = root / f"{pooling}_model"
-    training_args = TrainingArguments(
-        output_dir=str(checkpoint_dir),
-        overwrite_output_dir=True,
-        learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size * 2,
-        num_train_epochs=args.epochs,
-        weight_decay=0.01,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        logging_steps=100,
-        load_best_model_at_end=True,
-        metric_for_best_model="accuracy",
-        greater_is_better=True,
-        save_total_limit=1,
-        report_to="none",
-        seed=args.seed,
-        data_seed=args.seed,
-        fp16=args.fp16,
-    )
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=tokenized_dataset["train"],
-        eval_dataset=tokenized_dataset["validation"],
-        tokenizer=tokenizer,
-        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
-        compute_metrics=compute_metrics,
-    )
-    train_result = trainer.train()
-    trainer.save_metrics("train", train_result.metrics)
-    trainer.save_state()
+        str(a.model_path), local_files_only=True, num_labels=2,
+        id2label=ID2LABEL, label2id={v: k for k, v in ID2LABEL.items()})
+    model.config.pooling = method
+    ckpt = BASE / 'ckpt' / f'{name}_ckpt'
+    model_dir = BASE / 'ckpt' / f'{name}_model'
+    result_dir = BASE / 'result'
+    result_dir.mkdir(exist_ok=True)
+    arg_params = inspect.signature(TrainingArguments.__init__).parameters
+    strategy = 'eval_strategy' if 'eval_strategy' in arg_params else 'evaluation_strategy'
+    training_args = TrainingArguments(output_dir=str(ckpt), learning_rate=a.lr,
+        per_device_train_batch_size=a.batch_size, per_device_eval_batch_size=a.batch_size * 2,
+        num_train_epochs=a.epochs, weight_decay=0.01, **{strategy: 'epoch'}, save_strategy='epoch',
+        logging_steps=100, load_best_model_at_end=True, metric_for_best_model='accuracy',
+        greater_is_better=True, save_total_limit=1, report_to='none', seed=a.seed,
+        data_seed=a.seed, fp16=a.fp16, optim='adamw_torch')
+    proc = 'processing_class' if 'processing_class' in inspect.signature(Trainer.__init__).parameters else 'tokenizer'
+    trainer = Trainer(model=model, args=training_args, train_dataset=ds['train'], eval_dataset=ds['validation'],
+                      **{proc: tokenizer}, data_collator=DataCollatorWithPadding(tokenizer), compute_metrics=compute_metrics)
+    start = time.perf_counter()
+    train = trainer.train().metrics
     metrics = trainer.evaluate()
-    trainer.save_metrics("eval", metrics)
     trainer.save_model(str(model_dir))
     tokenizer.save_pretrained(model_dir)
-
-    result = {
-        "pooling": pooling,
-        "accuracy": float(metrics["eval_accuracy"]),
-        "eval_loss": float(metrics["eval_loss"]),
-        "epochs": args.epochs,
-        "batch_size": args.batch_size,
-        "learning_rate": args.lr,
-        "seed": args.seed,
-        "max_length": args.max_length,
-        "model_path": args.model_path,
-        "fp16": args.fp16,
-    }
-    with (checkpoint_dir / "experiment_result.json").open("w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    print(f"{pooling}: accuracy={result['accuracy']:.6f}, loss={result['eval_loss']:.6f}")
-    if pooling == "cls":
-        print(f"CLS accuracy > 0.88: {result['accuracy'] > 0.88}")
-    print(f"Model saved to: {model_dir}")
-
-    del trainer, model, training_args
+    trainer.save_state()
+    config = dict(epochs=a.epochs, batch_size=a.batch_size, eval_batch_size=a.batch_size*2,
+                  learning_rate=a.lr, weight_decay=0.01, optimizer='adamw_torch', seed=a.seed,
+                  max_length=a.max_length, fp16=a.fp16, model_path=str(a.model_path),
+                  train_size=len(ds['train']), validation_size=len(ds['validation']))
+    result = dict(pooling=method, run_name=name, config=config, dataset='SST-2', dataset_source=source,
+                  accuracy=float(metrics['eval_accuracy']), eval_loss=float(metrics['eval_loss']),
+                  train=train, validation=metrics, best_checkpoint=trainer.state.best_model_checkpoint,
+                  total_seconds=time.perf_counter()-start)
+    if method == 'cls':
+        result.update(target_accuracy=0.88, target_reached=result['accuracy'] > 0.88)
+    (result_dir / f'{name}_summary.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    rows = [r for r in trainer.state.log_history if 'eval_accuracy' in r]
+    with (result_dir / f'{name}_history.csv').open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=['epoch', 'step', 'eval_loss', 'eval_accuracy'], extrasaction='ignore')
+        writer.writeheader(); writer.writerows(rows)
+    print(f'{method}: accuracy={result["accuracy"]:.6f}, loss={result["eval_loss"]:.6f}', flush=True)
+    if method == 'cls':
+        print('CLS accuracy > 0.88:', result['target_reached'], flush=True)
+    del trainer, model
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return result
 
 
-def save_comparison(output_dir):
-    """Combine results from either --pooling all or separate invocations."""
-    root = Path(output_dir)
-    results = []
+def save_comparison(suffix, current):
+    root = BASE / 'result'
+    rows = []
     for method in POOLING_METHODS:
-        path = root / f"{method}_ckpt" / "experiment_result.json"
-        if path.is_file():
-            with path.open(encoding="utf-8") as f:
-                results.append(json.load(f))
-    if not results:
+        p = root / f'{method}_{suffix}_summary.json'
+        if p.is_file():
+            r = json.loads(p.read_text(encoding='utf-8'))
+            if r['config'] != current['config'] or r['dataset_source'] != current['dataset_source']:
+                print(f'跳过配置或数据来源不同的旧结果：{p.name}', flush=True)
+                continue
+            rows.append(dict(pooling=method, accuracy=r['accuracy'], eval_loss=r['eval_loss'],
+                             train_loss=r['train']['train_loss'], train_seconds=r['train']['train_runtime'],
+                             **r['config']))
+    if not rows:
         return
-    output = root / "pooling_comparison.csv"
-    with output.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=list(results[0]))
-        writer.writeheader()
-        writer.writerows(results)
-    print("\nPooling comparison (latest saved results):")
-    print(f"{'Pooling':<10} {'Accuracy':>12} {'Eval loss':>12}")
-    for row in results:
-        print(f"{row['pooling']:<10} {row['accuracy']:>12.6f} {row['eval_loss']:>12.6f}")
-    config_keys = ("epochs", "batch_size", "learning_rate", "seed", "max_length", "model_path", "fp16")
-    configs = {tuple(row[k] for k in config_keys) for row in results}
-    if len(configs) > 1:
-        print("Note: saved runs use different settings; compare runs with matching settings.")
-    print(f"Comparison saved to: {output}")
+    path = root / ('pooling_comparison.csv' if suffix == 'baseline' else f'pooling_comparison_{suffix}.csv')
+    with path.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader(); writer.writerows(rows)
+    print(f'\n对比结果：{path}', flush=True)
+    for row in rows:
+        print(f'{row["pooling"]:<5} Accuracy={row["accuracy"]:.6f} Loss={row["eval_loss"]:.6f}', flush=True)
 
 
 def main():
-    args = parse_args()
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    print(f"Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
-    tokenizer = prepare_model(args)
-    tokenized_dataset = prepare_dataset(args, tokenizer)
-    methods = POOLING_METHODS if args.pooling == "all" else (args.pooling,)
-    for method in methods:
-        train_one(args, method, tokenizer, tokenized_dataset)
-        save_comparison(args.output_dir)
+    a = parse_args()
+    os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
+    print('Device:', 'CUDA' if torch.cuda.is_available() else 'CPU', flush=True)
+    tokenizer = prepare_model(a)
+    ds, source = prepare_dataset(a, tokenizer)
+    suffix = config_suffix(a)
+    for method in (POOLING_METHODS if a.pooling == 'all' else (a.pooling,)):
+        current = train_one(a, method, tokenizer, ds, source, suffix)
+        save_comparison(suffix, current)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

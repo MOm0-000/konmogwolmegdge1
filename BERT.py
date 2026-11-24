@@ -1,7 +1,7 @@
 """DistilBERT classification with configurable CLS, mean, or max pooling.
 
 The encoder, classifier initialization and checkpoint interfaces are reused
-from Hugging Face Transformers 4.40.2.  Only the classification forward pass
+from Hugging Face Transformers.  Only the classification forward pass
 is customized for this experiment.
 """
 from typing import Optional, Tuple, Union
@@ -9,19 +9,8 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-from transformers import DistilBertConfig
+from transformers import DistilBertForSequenceClassification as _BaseSequenceClassifier
 from transformers.modeling_outputs import SequenceClassifierOutput
-from transformers.models.distilbert.modeling_distilbert import (
-    Embeddings,
-    MultiHeadSelfAttention,
-    FFN,
-    TransformerBlock,
-    Transformer,
-    DistilBertPreTrainedModel,
-    DistilBertModel,
-    DistilBertForMaskedLM,
-    DistilBertForSequenceClassification as _BaseSequenceClassifier,
-)
 
 POOLING_METHODS = ("cls", "mean", "max")
 
@@ -63,6 +52,8 @@ def pool_hidden_states(
 class DistilBertForSequenceClassification(_BaseSequenceClassifier):
     """Original DistilBERT classification head with configurable pooling."""
 
+    accepts_loss_kwargs = False
+
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
@@ -77,10 +68,13 @@ class DistilBertForSequenceClassification(_BaseSequenceClassifier):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
+        encoder_kwargs = {}
+        if head_mask is not None:
+            encoder_kwargs["head_mask"] = head_mask
         distilbert_output = self.distilbert(
+            **encoder_kwargs,
             input_ids=input_ids,
             attention_mask=attention_mask,
-            head_mask=head_mask,
             inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,

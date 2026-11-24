@@ -1,0 +1,52 @@
+{
+  "pooling": "cls",
+  "run_name": "cls_baseline",
+  "config": {
+    "epochs": 2,
+    "batch_size": 16,
+    "eval_batch_size": 32,
+    "learning_rate": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "adamw_torch",
+    "seed": 42,
+    "max_length": 128,
+    "fp16": false,
+    "model_path": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/distilbert",
+    "train_size": 67349,
+    "validation_size": 872
+  },
+  "dataset": "SST-2",
+  "dataset_source": {
+    "format": "arrow",
+    "files": {
+      "train": [
+        "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/parquet/sst2-c614fb49d6bf6d65/0.0.0/14a00e99c0d15a23649d0db8944380ac81082d4b021f398733dd84f3a6c569a7/parquet-train.arrow"
+      ],
+      "validation": [
+        "/home/zxx/knowledge/实验1-文本表示学习/实验代码/cache/parquet/sst2-c614fb49d6bf6d65/0.0.0/14a00e99c0d15a23649d0db8944380ac81082d4b021f398733dd84f3a6c569a7/parquet-validation.arrow"
+      ]
+    }
+  },
+  "accuracy": 0.9105504587155964,
+  "eval_loss": 0.2863917350769043,
+  "train": {
+    "train_runtime": 391.5643,
+    "train_samples_per_second": 344.0,
+    "train_steps_per_second": 21.503,
+    "total_flos": 1226900886258636.0,
+    "train_loss": 0.17602121719555164,
+    "epoch": 2.0
+  },
+  "validation": {
+    "eval_loss": 0.2863917350769043,
+    "eval_accuracy": 0.9105504587155964,
+    "eval_runtime": 0.5854,
+    "eval_samples_per_second": 1489.656,
+    "eval_steps_per_second": 47.833,
+    "epoch": 2.0
+  },
+  "best_checkpoint": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/ckpt/cls_baseline_ckpt/checkpoint-4210",
+  "total_seconds": 392.498638856001,
+  "target_accuracy": 0.88,
+  "target_reached": true
+}
