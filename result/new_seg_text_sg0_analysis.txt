@@ -1,9 +1,9 @@
 模型：/home/zxx/knowledge/实验1-文本表示学习/实验代码/ckpt/new_seg_text_sg0.model
-sg=0, window=1, vector_size=64, epochs=3
+sg=0, window=5, vector_size=64, epochs=20
 
 -- 自定义词对相似度 --
-sim(刘备, 关羽) = 0.84232116
-sim(曹操, 孙权) = 0.98796999
-sim(刘备, 粮草) = 0.88859206
-sim(关羽, 城池) = 0.96803653
+sim(刘备, 关羽) = 0.12795100
+sim(曹操, 孙权) = 0.55149817
+sim(刘备, 粮草) = 0.16934769
+sim(关羽, 城池) = 0.09430411
 分析记录：/home/zxx/knowledge/实验1-文本表示学习/实验代码/result/new_seg_text_sg0_analysis.txt

@@ -1,5 +1,5 @@
 语料：data/new_seg_text.txt
-开始训练：CBOW, sg=0, window=1, vector_size=64, epochs=3, seed=42, workers=1
-训练完成，耗时 0.40 秒，词表大小 7630
+开始训练：CBOW, sg=0, window=5, vector_size=64, epochs=20, seed=42, workers=1
+训练完成，耗时 2.53 秒，词表大小 7630
 模型：/home/zxx/knowledge/实验1-文本表示学习/实验代码/ckpt/new_seg_text_sg0.model
 训练记录：/home/zxx/knowledge/实验1-文本表示学习/实验代码/result/new_seg_text_sg0_train.txt
