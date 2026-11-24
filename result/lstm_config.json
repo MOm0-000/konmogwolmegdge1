@@ -1,0 +1,23 @@
+{
+  "corpus": "/home/zxx/knowledge/实验1-文本表示学习/实验代码/data/text.txt",
+  "segmented": false,
+  "encoding": "auto",
+  "vocab_size": 3000,
+  "embed_dim": 64,
+  "hidden_size": 256,
+  "num_layers": 1,
+  "seq_len": 31,
+  "stride": 31,
+  "batch_size": 64,
+  "lr": 0.002,
+  "epochs": 30,
+  "target_loss": 3.5,
+  "val_ratio": 0.05,
+  "seed": 42,
+  "device": "auto",
+  "run_name": "lstm",
+  "actual_vocab_size": 3000,
+  "train_unk_rate": 0.16874071955680847,
+  "val_unk_rate": 0.1971370428800583,
+  "device_used": "cuda"
+}
